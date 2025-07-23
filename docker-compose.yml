@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Main application
+  kimi-kb-api:
+    build: .
+    container_name: kimi-kb-api
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - CACHE_DB_PATH=/app/data/cache.db
+      - UPLOAD_DIR=/app/data/documents
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+    networks:
+      - kimi-kb-network
+
+  # Qdrant vector database
+  qdrant:
+    image: qdrant/qdrant:v1.6.1
+    container_name: kimi-kb-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+    networks:
+      - kimi-kb-network
+
+  # Redis for caching (optional, can use SQLite instead)
+  redis:
+    image: redis:7-alpine
+    container_name: kimi-kb-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - kimi-kb-network
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kimi-kb-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./data/prometheus:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    restart: unless-stopped
+    networks:
+      - kimi-kb-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kimi-kb-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+    networks:
+      - kimi-kb-network
+    profiles:
+      - monitoring
+
+networks:
+  kimi-kb-network:
+    driver: bridge
+
+volumes:
+  qdrant_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
